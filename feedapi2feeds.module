@@ -1,0 +1,110 @@
+<?php
+// $Id$
+
+/**
+ * @file
+ *   Provides a page callback to migrate from FeedAPI to Feeds, using the Batch API
+ */
+
+/**
+ * Implementation of hook_menu().
+ */
+function feedapi2feeds_menu() {
+  $items = array();
+  $items['admin/build/feeds/migrate'] = array(
+    'title' => t('Migrate from FeedAPI'),
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('feedapi2feeds_migrate_form'),
+    'access arguments' => array('administer feeds'),
+    'type' => MENU_LOCAL_TASK,
+    'weight' => 1,
+  );
+  return $items;
+}
+
+/**
+ * Migration form, choose between types.
+ */
+function feedapi2feeds_migrate_form() {
+  drupal_set_title(t('Migrate from FeedAPI to Feeds'));
+  if (variable_get('site_offline', FALSE) == FALSE) {
+    return array('msg' => array('#value' => t('Create backup and put the site into !mode first.', array('!mode' => l(t('maintenance mode'), 'admin/settings/site-maintenance')))));
+  }
+  else {  
+    module_load_include('php', 'feedapi2feeds', 'feedapi2feeds');
+    $migration = new FeedAPI2Feeds();
+    $to_migrate = $migration->getTypesToMigrate();
+    $form['types'] = array(
+      '#required' => TRUE,
+      '#type' => 'checkboxes',
+      '#options' => drupal_map_assoc($to_migrate),
+      '#title' => t('Types to migrate'),
+      '#default_value' => drupal_map_assoc($to_migrate),
+    );
+    $form['migrate'] = array(
+      '#type' => 'submit',
+      '#value' => t('Start migration'),
+    );
+    return $form;
+  }
+}
+
+/**
+ * Submit handler for feedapi2feeds_migrate_form().
+ */
+function feedapi2feeds_migrate_form_submit($form, $form_state) {
+  foreach ($form_state['values']['types'] as $k => $v) {
+    if ($k != $v) {
+      unset($form_state['values']['types'][$k]);
+    }
+  }
+  feedapi2feeds_batch_set(t('Migration from FeedAPI'), 'migrate', array_keys($form_state['values']['types']));
+}
+
+/**
+ * Batch callback.
+ *
+ * @param $method
+ *   Method to execute: migrate.
+ * @param $types
+ *   Array of content-type names
+ * @param $context
+ *   Batch context.
+ */
+function feedapi2feeds_batch($method, $types, &$context) {
+  if (!isset($context['sandbox']['progress'])) {
+    $context['sandbox']['progress'] = 0;
+    $context['sandbox']['max'] = count($types);
+  }
+  if ($method == 'migrate') {
+    module_load_include('php', 'feedapi2feeds', 'feedapi2feeds');
+    $migration = new FeedAPI2Feeds();
+    $current_type = $types[$context['sandbox']['progress']++];
+    $migration->migrateType($current_type);
+    $context['message'] = t('Now processing %type', array('%type' => $current_type));
+    $context['finished'] = $context['sandbox']['progress'] / $context['sandbox']['max'];
+  }
+}
+
+/**
+ * Batch helper.
+ *
+ * @param $title
+ *   Title to show to user when executing batch.
+ * @param $method
+ *   Method to execute on importer; one of 'import', 'clear' or 'expire'.
+ * @param $importer_id
+ *   Identifier of a FeedsImporter object.
+ * @param $feed_nid
+ *   If importer is attached to content type, feed node id identifying the
+ *   source to be imported.
+ */
+function feedapi2feeds_batch_set($title, $method, $types) {
+  $batch = array(
+    'title' => $title,
+    'operations' => array(
+      array('feedapi2feeds_batch', array($method, $types)),
+    ),
+  );
+  batch_set($batch);
+}
