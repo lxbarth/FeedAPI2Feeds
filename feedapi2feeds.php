@@ -11,6 +11,8 @@
 
 class FeedAPI2Feeds {
 
+  private $messages = array();
+
   // (Old FeedAPI submodule module name) => (Feeds Class name, must be a parser or processor class)
   private $dictionary = array(
     'parser_simplepie' => 'FeedsSimplePieParser',
@@ -159,6 +161,12 @@ class FeedAPI2Feeds {
     return $err;
   }
 
+  /**
+   * Migrates the given type to a Feeds importer
+   *
+   * @param $type
+   *   Content-type machine name
+   */
   public function migrateType($type) {
     $settings = feedapi_get_settings($type);
 
@@ -212,6 +220,9 @@ class FeedAPI2Feeds {
           $this->default_mapping = $ret;
         }
       }
+      else {
+        $this->messages[] = $this->t('The settings at @type for @submodule were not migrated.', array('@type' => $type, '@submodule' => $module));
+      }
     }
 
     // Supporting FeedAPI Mapper 1.x style mappings, only per-content-type
@@ -225,7 +236,16 @@ class FeedAPI2Feeds {
         if (!empty($matched_source) && !empty($matched_target)) {
           $importer->processor->addMapping($matched_source, $matched_target, FALSE);
         }
+        else {
+          $this->messages[] = t('Failed to migrate this mapping (@type): @source - @target', array('@type' => $type, '@source' => $source, '@target' => $target));
+        }
       }
+    }
+
+    // See what's abandoned
+    $count = db_result(db_query("SELECT COUNT(*) FROM {feedapi_mapper} m LEFT JOIN {node} n on m.nid = n.nid WHERE n.type = '%s'", $type));
+    if ($count > 0) {
+      $this->messages[] = t('@num feed nodes were detected with custom mapping (@type), these mappings were skipped, you need to manually migrate them!', array('@type' => $type, '@num' => $count));
     }
 
     // We have default mapping for these processors
@@ -265,6 +285,13 @@ class FeedAPI2Feeds {
     if (method_exists($this, $item_func)) {
       $this->{$item_func}($type, $importer);
     }
+  }
+
+  /**
+   * Gets information messages. Utilize after the migration and show to the user.
+   */
+  public function getMessages() {
+    return $this->messages;
   }
 
   /**
@@ -328,6 +355,20 @@ class FeedAPI2Feeds {
   }
 
   /**
+   * Chooses between Drush's dt() or Drupal's t().
+   */
+  private function t() {
+    $args = func_get_args();
+    if (array_key_exists('SHELL', $_ENV)) {
+      if (function_exists('dt')) {
+        return call_user_func_array('dt', $args);
+      }
+    }
+    return call_user_func_array('t', $args);
+  }
+
+
+  /**
    * FeedAPI Fast processor support for migration script
    *
    * Creates default Data table and configure the importer according to the old FeedAPI settings and the defaults
@@ -344,6 +385,7 @@ class FeedAPI2Feeds {
     // Set default importer config
     module_load_include('inc', 'feeds_defaults', 'feeds_defaults.features');
     $default_importer = feeds_defaults_feeds_importer_default();
+    $own_settings = $settings['processors']['feedapi_node'];
 
     $mapping = $default_importer['feed_fast']->config['processor']['config']['mappings'];
 
@@ -359,6 +401,15 @@ class FeedAPI2Feeds {
       $expire = FEEDS_EXPIRE_NEVER;
     }
     $importer->processor->addConfig(array('expire' => $expire));
+
+    // Report not updated settings
+    $old = array_keys($own_settings);
+    $handled = array('enabled', 'weight');
+    foreach ($old as $setting) {
+      if (!in_array($setting, $handled)) {
+        $this->messages[] = $this->t('@name old setting was not migrated to @importer importer.', array('@name' => $setting, '@importer' => $importer->id));
+      }
+    }
 
     return $mapping;
   }
@@ -405,6 +456,15 @@ class FeedAPI2Feeds {
       $expire = FEEDS_EXPIRE_NEVER;
     }
     $importer->processor->addConfig(array('expire' => $expire));
+
+    // Report not updated settings
+    $old = array_keys($own_settings);
+    $handled = array('enabled', 'weight', 'content_type');
+    foreach ($old as $setting) {
+      if (!in_array($setting, $handled)) {
+        $this->messages[] = $this->t('@name old setting was not migrated to @importer importer.', array('@name' => $setting, '@importer' => $importer->id));
+      }
+    }
   }
 
   /**

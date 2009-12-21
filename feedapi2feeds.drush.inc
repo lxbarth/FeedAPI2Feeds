@@ -51,6 +51,10 @@ function feedapi2feeds_drush_migrate_all() {
   } catch (Exception $e) {
     drush_print("The migration process has been completed with the following errors:\n". $e->getMessage());
   }
+  $msgs = $migration->getMessages();
+  foreach ($msgs as $msg) {
+    drush_print($msg);
+  }
   drush_print(dt("The migration has been completed."));
 }
 
@@ -71,6 +75,10 @@ function feedapi2feeds_drush_migrate($type) {
     $migration->migrateType($type);
   } catch (Exception $e) {
     drush_print("The migration was not successful:\n". $e->getMessage());
+  }
+  $msgs = $migration->getMessages();
+  foreach ($msgs as $msg) {
+    drush_print($msg);
   }
   drush_print(dt("The migration has been completed."));
 }

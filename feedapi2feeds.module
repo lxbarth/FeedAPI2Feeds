@@ -81,6 +81,10 @@ function feedapi2feeds_batch($method, $types, &$context) {
     $migration = new FeedAPI2Feeds();
     $current_type = $types[$context['sandbox']['progress']++];
     $migration->migrateType($current_type);
+    $msgs = $migration->getMessages();
+    foreach ($msgs as $msg) {
+      drupal_set_message($msg);
+    }
     $context['message'] = t('Now processing %type', array('%type' => $current_type));
     $context['finished'] = $context['sandbox']['progress'] / $context['sandbox']['max'];
   }
