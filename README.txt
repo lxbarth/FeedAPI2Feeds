@@ -33,7 +33,12 @@ Supported:
 - Parser Ical
   http://drupal.org/project/parser_ical (6.x dev version)
 
-Partially supported: Feed Element Mapper (1.x only!)
+Partially supported:
+
+- Feed Element Mapper:
+ - only 1.x
+ - only per-content-type mappings
+ - only for mapping sources and targets that are available in Feeds
 
 Not supported (known):
 
