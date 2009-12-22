@@ -221,7 +221,7 @@ class FeedAPI2Feeds {
         }
       }
       else {
-        $this->messages[] = $this->t('The settings at @type for @submodule were not migrated.', array('@type' => $type, '@submodule' => $module));
+        $this->messages[] = t('The settings at @type for @submodule were not migrated.', array('@type' => $type, '@submodule' => $module));
       }
     }
 
@@ -355,20 +355,6 @@ class FeedAPI2Feeds {
   }
 
   /**
-   * Chooses between Drush's dt() or Drupal's t().
-   */
-  private function t() {
-    $args = func_get_args();
-    if (array_key_exists('SHELL', $_ENV)) {
-      if (function_exists('dt')) {
-        return call_user_func_array('dt', $args);
-      }
-    }
-    return call_user_func_array('t', $args);
-  }
-
-
-  /**
    * FeedAPI Fast processor support for migration script
    *
    * Creates default Data table and configure the importer according to the old FeedAPI settings and the defaults
@@ -407,7 +393,7 @@ class FeedAPI2Feeds {
     $handled = array('enabled', 'weight');
     foreach ($old as $setting) {
       if (!in_array($setting, $handled)) {
-        $this->messages[] = $this->t('@name old setting was not migrated to @importer importer.', array('@name' => $setting, '@importer' => $importer->id));
+        $this->messages[] = t('@name old setting was not migrated to @importer importer.', array('@name' => $setting, '@importer' => $importer->id));
       }
     }
 
@@ -462,7 +448,7 @@ class FeedAPI2Feeds {
     $handled = array('enabled', 'weight', 'content_type');
     foreach ($old as $setting) {
       if (!in_array($setting, $handled)) {
-        $this->messages[] = $this->t('@name old setting was not migrated to @importer importer.', array('@name' => $setting, '@importer' => $importer->id));
+        $this->messages[] = t('@name old setting was not migrated to @importer importer.', array('@name' => $setting, '@importer' => $importer->id));
       }
     }
   }
