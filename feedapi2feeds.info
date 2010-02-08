@@ -5,6 +5,4 @@ package = Feeds
 dependencies[] = feeds
 dependencies[] = feeds_defaults
 dependencies[] = feeds_ui
-dependencies[] = feedapi
 core = 6.x
-
