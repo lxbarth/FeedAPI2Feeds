@@ -126,10 +126,8 @@ class FeedAPI2Feeds {
     if (!function_exists('feedapi_get_settings')) {
       module_load_include('inc', 'feedapi2feeds', 'feedapi2feeds.legacy');
     }
-    $status = module_load_include('inc', 'feeds_ui', 'feeds_ui.admin');
-    if ($status === FALSE) {
-      throw new Exception("Feeds UI is not installed. Please enable it before running this script");
-    }
+
+    // Gather legacy feedapi-enabled node types.
     $processors = $importers = $processed_types = array();
     foreach ($types as $type => $name) {
       $settings = feedapi_get_settings($type);
@@ -183,6 +181,9 @@ class FeedAPI2Feeds {
     foreach ($importers as $potential_importer) {
       if (!empty($potential_importer->config['content_type']) && $potential_importer->config['content_type'] === $type) {
         $importer = $potential_importer;
+        if ($class = get_class($importer->processor)) {
+          $processor = array_search($class, $this->dictionary);
+        }
         break;
       }
     }
