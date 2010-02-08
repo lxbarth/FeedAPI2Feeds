@@ -124,7 +124,7 @@ class FeedAPI2Feeds {
     $types = node_get_types('names');
     // Sanity check
     if (!function_exists('feedapi_get_settings')) {
-      throw new Exception("It seems that FeedAPI module is not enabled. Do not disable FeedAPI module until the migration is ready");
+      module_load_include('inc', 'feedapi2feeds', 'feedapi2feeds.legacy');
     }
     $status = module_load_include('inc', 'feeds_ui', 'feeds_ui.admin');
     if ($status === FALSE) {
@@ -137,8 +137,17 @@ class FeedAPI2Feeds {
         $to_migrate[] = $type;
       }
     }
-    return $to_migrate;
 
+    // If any of the existing importers are attached to content types,
+    // these should be migration options as well.
+    $importers = feeds_importer_load_all();
+    foreach ($importers as $importer) {
+      if (!empty($importer->config['content_type'])) {
+        $to_migrate[] = $importer->config['content_type'];
+      }
+    }
+
+    return array_unique($to_migrate);
   }
 
   /**
@@ -168,115 +177,128 @@ class FeedAPI2Feeds {
    *   Content-type machine name
    */
   public function migrateType($type) {
-    $settings = feedapi_get_settings($type);
-
-    // 1) Create new importer and configure it
-
-    // Generate a name for importer
-    $importer_name = $type;
-    $collision = TRUE;
-    $i = 0;
-    do {
-      $importer = feeds_importer($importer_name);
-      if (!ctools_export_load_object('feeds_importer', 'conditions', array('id' => $importer_name))) {
-        $collision = FALSE;
-      }
-      else {
-        $importer_name = $type . '_' . ($i++);
-      }
-    } while ($collision);
-
-    // Enable given parsers, processors w/ configuration, Feeds do not support multi parser, processor
-    $parser = $this->getActive($settings, 'parsers');
-    $processor = $this->getActive($settings, 'processors');
-    if (empty($parser) || empty($processor)) {
-      throw new Exception($type . ' content-type cannot migrated because there is no enabled parser or processor for it.');
-    }
-    if (!isset($this->dictionary[$parser])) {
-      throw new Exception($parser . ' parser is not supported by this migration script, skipping '. $type);
-      break;
-    }
-    if (!isset($this->dictionary[$processor])) {
-      throw new Exception($parser . ' processor is not supported by this migration script, skipping '. $type);
-      break;
-    }
-
-    // Create the new importer
-    $this->createImporter($importer_name, $type);
-    $importer = feeds_importer_load($importer_name);
-    $importer->setPlugin($this->dictionary[$parser]);
-    $importer->setPlugin($this->dictionary[$processor]);
-
-    if ($settings['upload_method'] == 'upload') {
-      $importer->setPlugin('FeedsFileFetcher');
-    }
-
-    // Apply per-submodule settings
-    foreach (array($parser, $processor) as $module) {
-      $config_func = 'feedapi2feeds_configure_'. $module;
-      if (method_exists($this, $config_func)) {
-        $ret = $this->$config_func($settings, $importer);
-        if (is_array($ret) && !empty($ret)) {
-          $this->default_mapping = $ret;
-        }
-      }
-      else {
-        $this->messages[] = t('The settings at @type for @submodule were not migrated.', array('@type' => $type, '@submodule' => $module));
+    // First attempt to retrieve an existing importer for this content type.
+    // If it can be retrieved, assume that it is configured correctly.
+    $importers = feeds_importer_load_all();
+    foreach ($importers as $potential_importer) {
+      if (!empty($potential_importer->config['content_type']) && $potential_importer->config['content_type'] === $type) {
+        $importer = $potential_importer;
+        break;
       }
     }
+    // Otherwise, create a new importer from the legacy FeedAPI configuration.
+    if (!isset($importer)) {
+      $settings = feedapi_get_settings($type);
 
-    // Supporting FeedAPI Mapper 1.x style mappings, only per-content-type
-    $custom_mapping = variable_get('feedapi_mapper_mapping_'. $type, array());
-    if (!empty($custom_mapping) && is_array($custom_mapping)) {
-      $sources = $importer->parser->getMappingSources();
-      $targets = $importer->processor->getMappingTargets();
-      foreach ($custom_mapping as $source => $target) {
-        $matched_source = $this->match($source, $sources);
-        $matched_target = $this->match($target, $targets);
-        if (!empty($matched_source) && !empty($matched_target)) {
-          $importer->processor->addMapping($matched_source, $matched_target, FALSE);
+      // 1) Create new importer and configure it
+
+      // Generate a name for importer
+      $importer_name = $type;
+      $collision = TRUE;
+      $i = 0;
+      do {
+        $importer = feeds_importer($importer_name);
+        if (!ctools_export_load_object('feeds_importer', 'conditions', array('id' => $importer_name))) {
+          $collision = FALSE;
         }
         else {
-          $this->messages[] = t('Failed to migrate this mapping (@type): @source - @target', array('@type' => $type, '@source' => $source, '@target' => $target));
+          $importer_name = $type . '_' . ($i++);
+        }
+      } while ($collision);
+
+      // Enable given parsers, processors w/ configuration, Feeds do not support multi parser, processor
+      $parser = $this->getActive($settings, 'parsers');
+      $processor = $this->getActive($settings, 'processors');
+      if (empty($parser) || empty($processor)) {
+        throw new Exception($type . ' content-type cannot migrated because there is no enabled parser or processor for it.');
+      }
+      if (!isset($this->dictionary[$parser])) {
+        throw new Exception($parser . ' parser is not supported by this migration script, skipping '. $type);
+        break;
+      }
+      if (!isset($this->dictionary[$processor])) {
+        throw new Exception($parser . ' processor is not supported by this migration script, skipping '. $type);
+        break;
+      }
+
+      // Create the new importer
+      $this->createImporter($importer_name, $type);
+      $importer = feeds_importer_load($importer_name);
+      $importer->setPlugin($this->dictionary[$parser]);
+      $importer->setPlugin($this->dictionary[$processor]);
+
+      if ($settings['upload_method'] == 'upload') {
+        $importer->setPlugin('FeedsFileFetcher');
+      }
+
+      // Apply per-submodule settings
+      foreach (array($parser, $processor) as $module) {
+        $config_func = 'feedapi2feeds_configure_'. $module;
+        if (method_exists($this, $config_func)) {
+          $ret = $this->$config_func($settings, $importer);
+          if (is_array($ret) && !empty($ret)) {
+            $this->default_mapping = $ret;
+          }
+        }
+        else {
+          $this->messages[] = t('The settings at @type for @submodule were not migrated.', array('@type' => $type, '@submodule' => $module));
         }
       }
-    }
 
-    // See what's abandoned
-    $count = db_result(db_query("SELECT COUNT(*) FROM {feedapi_mapper} m LEFT JOIN {node} n on m.nid = n.nid WHERE n.type = '%s'", $type));
-    if ($count > 0) {
-      $this->messages[] = t('@num feed nodes were detected with custom mapping (@type), these mappings were skipped, you need to manually migrate them!', array('@type' => $type, '@num' => $count));
-    }
-
-    // We have default mapping for these processors
-    if ($processor == 'feedapi_node' || $processor == 'feedapi_fast') {
-      foreach ($this->default_mapping as $mapping) {
-        $importer->processor->addMapping($mapping['source'], $mapping['target'], $mapping['unique']);
+      // Supporting FeedAPI Mapper 1.x style mappings, only per-content-type
+      $custom_mapping = variable_get('feedapi_mapper_mapping_'. $type, array());
+      if (!empty($custom_mapping) && is_array($custom_mapping)) {
+        $sources = $importer->parser->getMappingSources();
+        $targets = $importer->processor->getMappingTargets();
+        foreach ($custom_mapping as $source => $target) {
+          $matched_source = $this->match($source, $sources);
+          $matched_target = $this->match($target, $targets);
+          if (!empty($matched_source) && !empty($matched_target)) {
+            $importer->processor->addMapping($matched_source, $matched_target, FALSE);
+          }
+          else {
+            $this->messages[] = t('Failed to migrate this mapping (@type): @source - @target', array('@type' => $type, '@source' => $source, '@target' => $target));
+          }
+        }
       }
+
+      // See what's abandoned
+      $count = db_result(db_query("SELECT COUNT(*) FROM {feedapi_mapper} m LEFT JOIN {node} n on m.nid = n.nid WHERE n.type = '%s'", $type));
+      if ($count > 0) {
+        $this->messages[] = t('@num feed nodes were detected with custom mapping (@type), these mappings were skipped, you need to manually migrate them!', array('@type' => $type, '@num' => $count));
+      }
+
+      // We have default mapping for these processors
+      if ($processor == 'feedapi_node' || $processor == 'feedapi_fast') {
+        foreach ($this->default_mapping as $mapping) {
+          $importer->processor->addMapping($mapping['source'], $mapping['target'], $mapping['unique']);
+        }
+      }
+
+      // Attach importer to content-type, disable FeedAPI for that content-type
+      $importer->addConfig(array('content_type' => $type));
+      $importer->save();
+
+      // Detach FeedAPI from that content-type
+      variable_del('feedapi_settings_'. $type);
+      variable_set('_backup_feedapi_settings_'. $type, $settings);
     }
-
-    // Attach importer to content-type, disable FeedAPI for that content-type
-    $importer->addConfig(array('content_type' => $type));
-    $importer->save();
-
-    // Detach FeedAPI from that content-type
-    variable_del('feedapi_settings_'. $type);
-    variable_set('_backup_feedapi_settings_'. $type, $settings);
-
 
     // 2) Migrate feeds
 
     // Join on vid because of the revision support
-    $result = db_query("SELECT f.url, f.nid FROM {feedapi} f LEFT JOIN {node} n on f.vid = n.vid WHERE n.type='feed'", $type);
-    while ($feed = db_fetch_array($result)) {
-      if (empty($feed['url'])) {
-        break;
+    if (db_table_exists('feedapi')) {
+      $result = db_query("SELECT f.url, f.nid FROM {feedapi} f LEFT JOIN {node} n on f.vid = n.vid WHERE n.type='%s'", $type);
+      while ($feed = db_fetch_array($result)) {
+        if (empty($feed['url'])) {
+          break;
+        }
+        $source = feeds_source($importer->id, $feed['nid']);
+        $config = $source->getConfig();
+        $config['source'] = $config[get_class($importer->fetcher)]['source'] = $feed['url'];
+        $source->setConfig($config);
+        $source->save();
       }
-      $source = feeds_source($importer->id, $feed['nid']);
-      $config = $source->getConfig();
-      $config['source'] = $config[get_class($importer->fetcher)]['source'] = $feed['url'];
-      $source->setConfig($config);
-      $source->save();
     }
 
 
