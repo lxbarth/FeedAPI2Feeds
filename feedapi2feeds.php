@@ -189,6 +189,9 @@ class FeedAPI2Feeds {
     }
     // Otherwise, create a new importer from the legacy FeedAPI configuration.
     if (!isset($importer)) {
+      if (!function_exists('feedapi_get_settings')) {
+        module_load_include('inc', 'feedapi2feeds', 'feedapi2feeds.legacy');
+      }
       $settings = feedapi_get_settings($type);
 
       // 1) Create new importer and configure it
@@ -208,10 +211,13 @@ class FeedAPI2Feeds {
       } while ($collision);
 
       // Enable given parsers, processors w/ configuration, Feeds do not support multi parser, processor
-      $parser = $this->getActive($settings, 'parsers');
-      $processor = $this->getActive($settings, 'processors');
+      if (!empty($settings)) {
+        $parser = $this->getActive($settings, 'parsers');
+        $processor = $this->getActive($settings, 'processors');
+      }
       if (empty($parser) || empty($processor)) {
         throw new Exception($type . ' content-type cannot migrated because there is no enabled parser or processor for it.');
+        break;
       }
       if (!isset($this->dictionary[$parser])) {
         throw new Exception($parser . ' parser is not supported by this migration script, skipping '. $type);
