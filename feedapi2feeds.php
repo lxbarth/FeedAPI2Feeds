@@ -430,7 +430,7 @@ class FeedAPI2Feeds {
   }
 
   /**
-   * FeedAPI Node processor support for migration script
+   * FeedAPI Fast processor support for migration script
    *
    * Migrate items
    *
@@ -440,11 +440,13 @@ class FeedAPI2Feeds {
    *   Importer object
    */
   private function feedapi2feeds_item_feedapi_fast($type, $importer) {
-    db_query("INSERT INTO {feeds_data_" . $importer->id . "}
-    (feed_nid, timestamp, title, description, url, guid)
-    (SELECT fi.feed_nid, f.published, f.title, f.description, f.url, f.guid FROM feedapi_fast_item f
-    LEFT JOIN feedapi_fast_item_feed fi ON f.fid = feed_item_fid
-    LEFT JOIN node n ON fi.feed_nid = n.nid WHERE n.type='%s')", $type);
+    if (db_table_exists('feedapi_fast_item')) {
+      db_query("INSERT INTO {feeds_data_" . $importer->id . "}
+      (feed_nid, timestamp, title, description, url, guid)
+      (SELECT fi.feed_nid, f.published, f.title, f.description, f.url, f.guid FROM {feedapi_fast_item} f
+      LEFT JOIN {feedapi_fast_item_feed} fi ON f.fid = feed_item_fid
+      LEFT JOIN {node} n ON fi.feed_nid = n.nid WHERE n.type='%s')", $type);
+    }
   }
 
   /**
